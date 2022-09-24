@@ -7,7 +7,7 @@ Most parameters are available on command line, but see `stringie/config.py` for 
 ## Usage
 
     $ python stringie -h
-    usage: stringie [-h] [-t TERMS_FILE] [-o OUTPUT] [-i] [-c] [-s] [-d] [-v] path
+    usage: stringie [-h] [-t TERMS_FILE] [-o OUTPUT] [-l MIN] [-x MAX] [-i] [-c] [-s] [-d] [-v] path
 
     Extracts meaningful strings out of mixed content in a tree.
 
@@ -20,13 +20,14 @@ Most parameters are available on command line, but see `stringie/config.py` for 
                             File with search terms (one per line)
     -o OUTPUT, --output OUTPUT
                             Ouptut file (if not present will print to stdout
+    -l MIN, --min MIN     Minimum length of fragment. Min value between this and value in config.
+    -x MAX, --max MAX     Maximum length of fragment.
     -i, --ignore_case     Ignore case
     -c, --common          Extract common set (addresses, names, phone numbers, emails, domains...
     -s, --order           Sort results
     -d, --dedupe          Dedupe results (will sort list)
     -v, --verbose         Verbose logging
+                                            
 
 ## TODO
 - Language support
-- Terms file support
-- Case insensitivity
