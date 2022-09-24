@@ -1,15 +1,11 @@
 """Text extraction."""
 
-import argparse
 import logging
 import math
 import os
-import re
-import string
-from typing import KeysView, Sequence
+from typing import Sequence
 import string
 import time
-from typing_extensions import Self
 
 import config
 
