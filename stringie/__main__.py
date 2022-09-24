@@ -17,6 +17,8 @@ if __name__ == "__main__":
     # optional string parameters
     parser.add_argument("-t", "--terms_file", help="File with search terms (one per line)")
     parser.add_argument("-o", "--output", help="Ouptut file (if not present will print to stdout")
+    parser.add_argument("-l", "--min", help="Minimum length of fragment. Min value between this and value in config.")
+    parser.add_argument("-x", "--max", help="Maximum length of fragment.")
 
     # boolean flags
     parser.add_argument("-i", "--ignore_case", help="Ignore case", action="store_true")
@@ -33,6 +35,8 @@ if __name__ == "__main__":
                           output_file=args.output,
                           order=args.order, 
                           dedupe=args.dedupe, 
-                          verbose_logging=args.verbose)
+                          verbose_logging=args.verbose, 
+                          min_len=args.min, 
+                          max_len=args.max)  # not supported yet
 
     s.scan(args.path)

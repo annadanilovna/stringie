@@ -21,7 +21,7 @@ Stringie will discard strings shorter than `MIN_STR_LEN:int`.
 
 Default: 4
 """
-MIN_STR_LEN:int = 4
+MIN_STR_LEN:int = 3
 
 """
 For the PartitionedBucket data type. Increase the key length to 
@@ -39,7 +39,12 @@ KEY_LEN:int = 1
 
 """
 List denoting file extensions to ignore.
+
+The first line is media types which are largely useless, unless looking for data 
+in EXIF, ID3, etc. OR steganography is involved.
+
+The second line is generally included just because the files are large.
 """
-IGNORE_EXTS:list[str] = []  
-#["package", "zip", "img", "iso", "gz"]
+IGNORE_EXTS:list[str] = ["mov", "mp4", "wav", "gif", "jpg", "png", "bmp",  # these typically don't have anything 
+                         "package", "zip", "img", "iso", "gz"]  # these are typically really big and really slow
 
