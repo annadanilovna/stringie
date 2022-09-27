@@ -24,8 +24,6 @@ Most parameters are available on command line, but see `stringie/config.py` for 
     -x MAX, --max MAX     Maximum length of fragment.
     -i, --ignore_case     Ignore case
     -c, --common          Extract common set (addresses, names, phone numbers, emails, domains...
-    -s, --order           Sort results
-    -d, --dedupe          Dedupe results (will sort list)
     -v, --verbose         Verbose logging
                                             
 

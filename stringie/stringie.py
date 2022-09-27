@@ -3,20 +3,72 @@
 import logging
 import math
 import os
-from typing import Sequence
 import string
 import time
+from dataclasses import dataclass, field
+from io import TextIOWrapper
 
 import config
-from bucket import Bucket
 
+
+class Bucket:
+    """Partitioned dictionary."""
+    def __init__(self) -> None:
+        self._data:set = set()
+
+    def size(self) -> int:
+        return len(self._data)
+
+    def add(self, val:str) -> None:
+        """Add a value."""
+        self._data.add(val)
+
+    def flush(self, stdout:bool=True, fn:str=None, append:bool=True) -> None:
+        """
+        Flush the bucket to disk or stdout.
+        """
+        fh:TextIOWrapper = None
+        if fn is not None:
+            fh = open(fn, "a" if append is True else "w")
+        
+        if stdout is False and fn is None:
+            return
+
+        for v in self._data:
+            if stdout is True:
+                print(v)
+            if fh is not None:
+                fh.write(f"{v}\n")
+
+
+@dataclass 
+class StringieScanFile:
+    root:str
+    fn:str
+    path:str = field(init=False)
+    size:int = field(init=False)
+    chunks:int = field(init=False)
+
+    def __post_init__(self):
+        self.path = f"{self.root}/{self.fn}"
+        self.size:int = os.stat(self.path).st_size
+        self.chunks:int = int(math.ceil(self.size / config.CHUNK_SIZE))
+
+@dataclass 
+class StringieScan:
+    files:list[StringieScanFile] = field(init=False)
+    total_size:int = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.files = []
+        self.total_size = 0
+    
 
 class Stringie:
     """Grabs meaningful strings out of a collection of files """
-    def __init__(self, terms_file:str=None, output_file:str=None, 
-                 ignore_case:bool=True, extract_common:bool=True, 
-                 order:bool=True, dedupe:bool=True, 
-                 verbose_logging:bool=True, 
+    def __init__(self, terms_file:str=None, output_file:str=None,
+                 ignore_case:bool=True, extract_common:bool=True,
+                 verbose_logging:bool=True,
                  min_len:int=config.MIN_STR_LEN,
                  max_len:int=None) -> None:
 
@@ -32,9 +84,8 @@ class Stringie:
         self._extract_common: bool = extract_common
         self._verbose_logging: bool = verbose_logging
         self._charset:str = string.ascii_letters + string.digits + string.punctuation
-        self._bucket:Bucket = Bucket(dedupe=dedupe, order=order)
+        self._bucket:Bucket = Bucket()
         self._min_len:int =  min(min_len, config.MIN_STR_LEN) if min_len else config.MIN_STR_LEN
-    
         self._max_len:int = max_len
 
     def _log(self, mesg:str, level=logging.INFO) -> None:
@@ -42,11 +93,11 @@ class Stringie:
         if level < logging.INFO and not self._verbose_logging:
             return
         logging.log(level, mesg)
-    
+
     def _log_stats(self) -> None:
         """Print bucket stats to log."""
         logging.info(f"Bucket stats: {self._bucket.size()} elements")
-          
+
     def scan_chunk(self, chunk:bytes) -> int:
         """Scan chunk of bytes."""
         frag:str = ""
@@ -60,13 +111,13 @@ class Stringie:
                 add = True
                 if len(self._search_terms) > 0:
                     add = False
-                    search = frag.lower() if self._ignore_case else frag
+                    search:str = frag.lower() if self._ignore_case else frag
                     for term in self._search_terms:
                         if term in search:
                             add = True
                             break
-                
-                if add: 
+
+                if add:
                     self._bucket.add(frag.strip())
                     cnt += 1
                     frag = ""
@@ -74,25 +125,27 @@ class Stringie:
                 frag = ""
         return cnt
 
-    def scan_file(self, path:str, fn:str) -> int:
+    def scan_file(self, ssf:StringieScanFile) -> int:
         """Scan a file."""
         # self._log(f"Scanning file {path}")
         cnt:int = 0
         cur_chunk:int = 1
-        path = f"{path}/{fn}"
-        with open(path, "rb") as fh:
-            chunks:int = int(math.ceil(os.stat(path).st_size / config.CHUNK_SIZE))
+        
+        with open(ssf.path, "rb") as fh:
             # if config.MAX_CHUNKS is not None and chunks > config.MAX_CHUNKS:  # skip if too big
             #    return 0
-
             chunk:bytes = fh.read(config.CHUNK_SIZE)
             while chunk:
                 if cur_chunk % 1000 == 0:
-                    self._log(f"{fn}: Scanning chunk {cur_chunk}/{chunks} ({round(cur_chunk * 1.0/chunks * 100, 2)}% done)")
+                    a:str = f"Scanning chunk {cur_chunk}/{ssf.chunks}"
+                    b:str = f"({round(cur_chunk * 1.0/ssf.chunks * 100, 2)}% done)"
+                    c:str = f"({cnt} found)"
+                    self._log(f"{ssf.fn}: {a} {b} {c}")
                 cnt += self.scan_chunk(chunk)
                 chunk = fh.read(config.CHUNK_SIZE)
                 cur_chunk += 1
-            self._log(f"{fn}: Done! ({cnt} found)")
+            self._log(f"{ssf.fn}: Done! ({cnt} found)")
+            self._bucket.flush(stdout=False, fn="tmp-output.txt", append=True)
         return cnt
 
     def scan_tree(self, path:str) -> int:
@@ -100,51 +153,43 @@ class Stringie:
         if not os.path.exists(path):
             raise FileNotFoundError(f"{path} does not exist.")
 
-        self._log(f"Scanning tree {path}")
-
         # First scan the tree, then run over files. This allows some semblance of a completion percentage.
         cnt:int = 0
         total_size:int = 0
-        files = []
+        files:list[StringieScanFile] = []
+        scan_size_ctr:int = 0
+        num_files:int = 0
+
         for root, _, fns in os.walk(path):
             for fn in fns:
                 if fn.split(".").pop() in config.IGNORE_EXTS:
-                    exts: str = ", ".join(config.IGNORE_EXTS)
-                    logging.warn(f"ignoring files with the following extensions currently: {exts}.")
+                    logging.warn(f"ignoring files with the following extensions currently: {config.IGNORE_EXTS_STR}.")
                     continue
-            
-                fsize = os.stat(f"{root}/{fn}").st_size
-                files.append([root, fn, fsize])
-                total_size += fsize
+                ssf:StringieScanFile = StringieScanFile(root=root, fn=fn)
+                files.append(ssf)
+                total_size += ssf.size
 
-        scan_ctr:int = 1
-        scan_size_ctr:int = 0
-        num_files:int = len(files)
-        self._log(f"Found {num_files} to scan.")
-        for flist in files:
+        num_files = len(files)
+        self._log(f"Found {num_files} ({total_size} bytes) to scan.")
 
-            scan_size_ctr += flist[2]
-
-            pct_file_done:float = round(scan_ctr / num_files * 100, 2)
+        for idx in range(0, num_files):
+            scan_size_ctr += files[idx].size
+            pct_file_done:float = round(idx / num_files * 100, 2)
             pct_size_done:float = round(scan_size_ctr / total_size * 100, 2)
 
-            cnt += self.scan_file(flist[0], flist[1]) 
-            self._log(f"Scanning file {scan_ctr} of {num_files} ({pct_file_done}% files complete) / {pct_size_done}% of bytes scanned)")
-            scan_ctr += 1
-        self._log(f"Done! ({cnt} found)")
+            cnt += self.scan_file(files[idx])
+
+            self._log(f"Scanning file {idx} of {num_files} ({pct_file_done}% files complete) / {pct_size_done}% of bytes scanned)")        
         return cnt
-        
+
     def scan(self, path:str) -> None:
         """Scan tree."""
-        self.scan_tree(path)
-        self._print_results()
+        self._log(f"Scanning {path}")
 
-    def _print_results(self):
-        """Output results to file or stdout."""
-        if self._output_file:
-            with open(self._output_file, "w") as fh:
-                for s in self._bucket:
-                    fh.write(f"{s}\n")
-        else:
-            for s in self._bucket:
-                print(s)
+        # scan tree
+        cnt:int = self.scan_tree(path)
+        
+        self._log(f"Done! ({cnt} found)")
+        
+        # print results
+        self._bucket.flush(stdout=True, fn=self._output_file, append=False)
